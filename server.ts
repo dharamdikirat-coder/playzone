@@ -12,17 +12,19 @@ import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
-// 2. VERIFY SUPABASE ENV VARIABLES WITH SAFE FALLBACK
-// Fallback to the default working Supabase project so the server starts seamlessly on all deployments (Vercel, Netlify, Cloud Run)
-const supabaseUrl = process.env.SUPABASE_URL || 'https://vxhicoizewtisxiuolqh.supabase.co';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'sb_publishable_kn3fVpMpVX1wGWcUxV-Fpw_w8AomVlA';
+// 2. VERIFY SUPABASE ENV VARIABLES
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  console.warn('[Supabase Init] WARNING: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables are missing. Using default system credentials as failsafe.');
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error('\x1b[31m%s\x1b[0m', 'CRITICAL CONFIGURATION ERROR: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variable is missing!');
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL === '1') {
+    throw new Error('Missing Supabase Environment Variables in Production! Crash to prevent ghost local state saving.');
+  }
 }
 
 // Instantiate Supabase client for backend use
-export const supabase = createClient(supabaseUrl, supabaseServiceKey);
+export const supabase = createClient(supabaseUrl || '', supabaseServiceKey || '');
 
 // 3. VERIFY DATABASE CONNECTION (Startup Test)
 (async () => {
@@ -249,14 +251,20 @@ const hasDatabaseUrl = !!(process.env.DATABASE_URL &&
                          !process.env.DATABASE_URL.includes('127.0.0.1') && 
                          process.env.DATABASE_URL.trim() !== '');
 
-let useFallbackMode = !hasDatabaseUrl;
+// In production, we NEVER allow fallback mode. We must catch configuration failures immediately.
+const isProdEnv = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
+let useFallbackMode = isProdEnv ? false : !hasDatabaseUrl;
 let lastDbCheckTime = 0;
 
 // Reconnect/Connection check scheduler
 async function checkDbConnection() {
   if (!hasDatabaseUrl) {
-    console.warn('[DB Init] DATABASE_URL env is empty or localhost. Activating dynamic local JSON filesystem fallback mode.');
-    useFallbackMode = true;
+    if (isProdEnv) {
+      console.error('[DB Init] CRITICAL PROD ERROR: DATABASE_URL is missing in environment variables. Production requires a live database!');
+    } else {
+      console.warn('[DB Init] DATABASE_URL env is empty or localhost. Activating dynamic local JSON filesystem fallback mode.');
+    }
+    useFallbackMode = isProdEnv ? false : true;
     return;
   }
   try {
@@ -264,8 +272,13 @@ async function checkDbConnection() {
     console.log('[DB Init] PostgreSQL connection verified successfully. Running in standard sync mode.');
     useFallbackMode = false;
   } catch (err) {
-    console.warn('[DB Init] PostgreSQL connection failed. Activating dynamic local JSON filesystem fallback mode. Details:', (err as Error).message);
-    useFallbackMode = true;
+    if (isProdEnv) {
+      console.error('[DB Init] CRITICAL PROD ERROR: PostgreSQL connection failed in standard mode: ', (err as Error).message);
+      useFallbackMode = false; // Stay in standard mode so errors throw downstream
+    } else {
+      console.warn('[DB Init] PostgreSQL connection failed. Activating dynamic local JSON filesystem fallback mode. Details:', (err as Error).message);
+      useFallbackMode = true;
+    }
   }
 }
 
