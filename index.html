@@ -38,16 +38,19 @@
     </script>
     <script type="module" src="/src/main.tsx"></script>
     <script>
+      // Active cleanup and unregistration of stale service worker assets causing caching locks
       if ("serviceWorker" in navigator) {
-        window.addEventListener("load", () => {
-          navigator.serviceWorker.register("/sw.js").then(
-            (registration) => {
-              console.log("ServiceWorker registration successful with scope: ", registration.scope);
-            },
-            (err) => {
-              console.log("ServiceWorker registration failed: ", err);
-            }
-          );
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          if (registrations && registrations.length > 0) {
+            console.log("Stale ServiceWorker detected. Pursuing unregistration and cache wipe...");
+            Promise.all(registrations.map(r => r.unregister()))
+              .then(() => caches.keys())
+              .then((keys) => Promise.all(keys.map(k => caches.delete(k))))
+              .then(() => {
+                console.log("All service workers and cached assets wiped. Reloading for clean sync.");
+                window.location.reload();
+              });
+          }
         });
       }
     </script>
