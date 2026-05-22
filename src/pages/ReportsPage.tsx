@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { usePlayZone } from '../hooks/usePlayZone';
+import { getApiBase } from '../lib/syncService';
 import { 
   BarChart3, 
   Search, 
@@ -294,7 +295,7 @@ export default function ReportsPage() {
     formData.append('file', file);
 
     try {
-      const res = await fetch(`/api/import/${type}`, {
+      const res = await fetch(`${getApiBase()}/api/import/${type}`, {
         method: 'POST',
         body: formData,
       });

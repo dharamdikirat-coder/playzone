@@ -23,6 +23,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { APP_NAME, FOOTER_TEXT } from '../constants';
 import { cn } from '../lib/utils';
 import { usePlayZone } from '../hooks/usePlayZone';
+import { getApiBase } from '../lib/syncService';
 
 export default function Layout() {
   const { businessProfile, isAdmin, logout, dbError, refreshData, isSyncing } = usePlayZone();
@@ -335,7 +336,7 @@ export default function Layout() {
                   <button 
                     onClick={async () => {
                       try {
-                        const res = await fetch('/api/logs');
+                        const res = await fetch(`${getApiBase()}/api/logs`);
                         const logs = await res.json();
                         alert(Array.isArray(logs) ? logs.slice(-20).join('\n') : 'No logs found');
                       } catch (e) {

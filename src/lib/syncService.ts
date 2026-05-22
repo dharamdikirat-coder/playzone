@@ -302,6 +302,15 @@ export function isOnline(): boolean {
   return typeof window !== 'undefined' ? window.navigator.onLine : true;
 }
 
+export function getApiBase(): string {
+  if (typeof window === 'undefined') return '';
+  const hostname = window.location.hostname;
+  if (hostname && (hostname.includes('netlify.app') || hostname.includes('vercel.app') || hostname.includes('github.io'))) {
+    return 'https://ais-pre-d2mo7afrislianphxjhbyl-608713944205.asia-southeast1.run.app';
+  }
+  return '';
+}
+
 function getTableEndpoint(table: string): string {
   if (table === 'play_entries') return 'entries';
   if (table === 'walk_in_customers') return 'walk-in-v1';
@@ -321,7 +330,8 @@ export async function dbWrite(
   console.log(`[dbWrite] table=${table} action=${action} recordId=${recordId}`, clientObj);
 
   const endpoint = getTableEndpoint(table);
-  const url = `/api/${endpoint}`;
+  const baseUrl = getApiBase();
+  const url = `${baseUrl}/api/${endpoint}`;
 
   try {
     let response: Response;

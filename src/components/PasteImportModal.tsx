@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Clipboard, CheckCircle2, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { getApiBase } from '../lib/syncService';
 
 interface PasteImportModalProps {
   isOpen: boolean;
@@ -94,7 +95,7 @@ export default function PasteImportModal({ isOpen, onClose, onSuccess }: PasteIm
 
       console.log('Sending data:', data);
 
-      const res = await fetch(`/api/import-json/${type}`, {
+      const res = await fetch(`${getApiBase()}/api/import-json/${type}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

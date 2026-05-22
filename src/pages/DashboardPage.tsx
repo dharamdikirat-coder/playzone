@@ -1,6 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { usePlayZone } from '../hooks/usePlayZone';
+import { getApiBase } from '../lib/syncService';
 import { 
   Users, 
   Wallet, 
@@ -117,7 +118,7 @@ export default function DashboardPage() {
       const formData = new FormData();
       formData.append('file', file);
       try {
-        const res = await fetch(`/api/import/${type}`, {
+        const res = await fetch(`${getApiBase()}/api/import/${type}`, {
           method: 'POST',
           body: formData
         });

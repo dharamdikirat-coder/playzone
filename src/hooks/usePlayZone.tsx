@@ -17,7 +17,7 @@ import {
   StaffMember
 } from '../types';
 import { PLANS } from '../constants';
-import { dbWrite, mapFromDB, isOnline, registerSyncStatusCallback, flushOfflineQueue } from '../lib/syncService';
+import { dbWrite, mapFromDB, isOnline, registerSyncStatusCallback, flushOfflineQueue, getApiBase } from '../lib/syncService';
 import { getOfflineQueue } from '../lib/offlineQueue';
 
 interface PlayZoneContextType {
@@ -284,7 +284,8 @@ export function PlayZoneProvider({ children }: { children: React.ReactNode }) {
     setIsSyncing(true);
     setDbError(null);
 
-    const safeFetch = async (url: string, fallback: any) => {
+    const safeFetch = async (endpoint: string, fallback: any) => {
+      const url = `${getApiBase()}${endpoint}`;
       try {
         const res = await fetch(url);
         if (!res.ok) {
