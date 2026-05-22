@@ -308,18 +308,30 @@ export function getApiBase(): string {
   // 1. Prefer explicit VITE_API_URL environment variable if set by user in Vercel/Netlify dashboard
   const envApiUrl = import.meta.env.VITE_API_URL;
   if (envApiUrl && envApiUrl.trim() !== '') {
-    return envApiUrl.replace(/\/$/, ''); // strip trailing slash
+    // SECURITY & ARCHITECTURAL SAFEGUARD:
+    // If the developer set VITE_API_URL to the Supabase URL, catch it!
+    // Supabase has no /api/ endpoints (they have /rest/v1), so this would result in failed fetches.
+    if (envApiUrl.includes('supabase.co')) {
+      console.warn(
+        `%c[Sync Config] WARNING: VITE_API_URL is misconfigured to your Supabase project URL ("${envApiUrl}").\n` +
+        `App API endpoints are served by your Express backend (or Vercel serverless functions), NOT directly by Supabase REST.\n` +
+        `Ignoring this misconfigured/stale VITE_API_URL and falling back to proper relative routes.`,
+        'color: #ff9800; font-weight: bold; font-size: 11px;'
+      );
+    } else {
+      return envApiUrl.replace(/\/$/, ''); // strip trailing slash
+    }
   }
 
   const hostname = window.location.hostname;
 
-  // 2. If running on local dev machine, connect to localhost API
+  // 2. If running on local dev machine, connect to localhost API (relative paths)
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     return '';
   }
 
-  // 3. If deployed on Vercel, Vercel hosts both the frontend and backend.
-  // We want to fetch from the local serverless functions relatively!
+  // 3. If deployed on Vercel, Vercel hosts both the frontend and backend under the same domain.
+  // We must fetch relatively so the serverless Express functions handle the request.
   if (hostname.includes('vercel.app')) {
     return '';
   }
