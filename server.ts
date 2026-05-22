@@ -64,9 +64,7 @@ if (typeof dns.setDefaultResultOrder === 'function') {
 }
 
 const upload = multer({ storage: multer.memoryStorage() });
-const PORT = process.env.NODE_ENV === 'production' && process.env.PORT 
-  ? parseInt(process.env.PORT) 
-  : 3000;
+const PORT = 3000;
 const app = express();
 export { app };
 
@@ -2049,7 +2047,7 @@ app.post('/api/import/:type', upload.single('file'), async (req, res) => {
   }
 
   if (process.env.VERCEL !== '1') {
-    const startPort = process.env.NODE_ENV === 'production' && process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+    const startPort = 3000;
     app.listen(startPort, '0.0.0.0', () => {
       console.log(`Server running on http://0.0.0.0:${startPort} (NODE_ENV: ${process.env.NODE_ENV || 'development'})`);
     });
