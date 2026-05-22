@@ -126,6 +126,37 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// --- Route Logger Middleware ---
+app.use((req, res, next) => {
+  // Only log API routes to prevent spamming logs with static assets from Vite / SPA compilation
+  if (req.originalUrl.startsWith('/api/')) {
+    const start = Date.now();
+    const origin = req.headers.origin || 'unknown source';
+    console.log(`\x1b[36m[Route Logger] INCOMING: ${req.method} ${req.originalUrl} from origin: ${origin}\x1b[0m`);
+    res.on('finish', () => {
+      const duration = Date.now() - start;
+      const color = res.statusCode >= 400 ? '\x1b[31m' : '\x1b[32m';
+      console.log(`${color}[Route Logger] OUTGOING: ${req.method} ${req.originalUrl} completed with status: ${res.statusCode} in ${duration}ms\x1b[0m`);
+    });
+  }
+  next();
+});
+
+// --- Test Route ---
+app.get('/api/test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'PlayZone express API backend is fully operational!',
+    timestamp: new Date().toISOString(),
+    details: {
+      node_env: process.env.NODE_ENV,
+      port: process.env.PORT || 'not defined (using 3000)',
+      database_url_present: !!process.env.DATABASE_URL,
+      supabase_url_present: !!process.env.SUPABASE_URL
+    }
+  });
+});
+
 // --- Middleware for API JSON Safety ---
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) {
@@ -400,7 +431,7 @@ app.post('/api/db-status/retry', async (req, res) => {
 // --- API Routes ---
 
 // 1. Business Profile
-app.get('/api/business-profile', async (req, res) => {
+app.get(['/api/business-profile', '/api/business-profiles'], async (req, res) => {
   try {
     let profile = null;
     if (!useFallbackMode) {
@@ -442,7 +473,7 @@ app.get('/api/business-profile', async (req, res) => {
   }
 });
 
-app.post('/api/business-profile', async (req, res) => {
+app.post(['/api/business-profile', '/api/business-profiles'], async (req, res) => {
   try {
     const fields = [
       'name', 'subName', 'unitName', 'address', 'gstNo', 'mobile',
@@ -492,7 +523,7 @@ app.post('/api/business-profile', async (req, res) => {
 });
 
 // 2. Staff
-app.get('/api/staff', async (req, res) => {
+app.get(['/api/staff', '/api/staffs'], async (req, res) => {
   try {
     let allStaff = [];
     if (!useFallbackMode) {
@@ -525,7 +556,7 @@ app.get('/api/staff', async (req, res) => {
   }
 });
 
-app.post('/api/staff', async (req, res) => {
+app.post(['/api/staff', '/api/staffs'], async (req, res) => {
   try {
     const fields = ['id', 'password', 'fullName', 'role', 'phone', 'status', 'joinedDate'];
     const body = {
@@ -561,7 +592,7 @@ app.post('/api/staff', async (req, res) => {
   }
 });
 
-app.put('/api/staff/:id', async (req, res) => {
+app.put(['/api/staff/:id', '/api/staffs/:id'], async (req, res) => {
   try {
     const fields = ['password', 'fullName', 'role', 'phone', 'status', 'joinedDate'];
     const body = {
@@ -604,7 +635,7 @@ app.put('/api/staff/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/staff/:id', async (req, res) => {
+app.delete(['/api/staff/:id', '/api/staffs/:id'], async (req, res) => {
   try {
     const fallbackList = readFallback('staff').filter(item => String(item.id) !== String(req.params.id));
     writeFallback('staff', fallbackList);
@@ -625,7 +656,7 @@ app.delete('/api/staff/:id', async (req, res) => {
 });
 
 // 3. Categories
-app.get('/api/categories', async (req, res) => {
+app.get(['/api/categories', '/api/category'], async (req, res) => {
   try {
     let allCategories = [];
     if (!useFallbackMode) {
@@ -656,7 +687,7 @@ app.get('/api/categories', async (req, res) => {
   }
 });
 
-app.post('/api/categories', async (req, res) => {
+app.post(['/api/categories', '/api/category'], async (req, res) => {
   try {
     const fields = ['name', 'type'];
     const payload = cleanPayload(fields, req.body);
@@ -683,7 +714,7 @@ app.post('/api/categories', async (req, res) => {
   }
 });
 
-app.put('/api/categories/:id', async (req, res) => {
+app.put(['/api/categories/:id', '/api/category/:id'], async (req, res) => {
   try {
     const fields = ['name', 'type'];
     const payload = cleanPayload(fields, req.body);
@@ -718,7 +749,7 @@ app.put('/api/categories/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/categories/:id', async (req, res) => {
+app.delete(['/api/categories/:id', '/api/category/:id'], async (req, res) => {
   try {
     const fallbackList = readFallback('categories').filter(item => String(item.id) !== String(req.params.id));
     writeFallback('categories', fallbackList);
@@ -739,7 +770,7 @@ app.delete('/api/categories/:id', async (req, res) => {
 });
 
 // 4. Plans
-app.get('/api/plans', async (req, res) => {
+app.get(['/api/plans', '/api/plan'], async (req, res) => {
   try {
     let allPlans = [];
     if (!useFallbackMode) {
@@ -769,7 +800,7 @@ app.get('/api/plans', async (req, res) => {
   }
 });
 
-app.post('/api/plans', async (req, res) => {
+app.post(['/api/plans', '/api/plan'], async (req, res) => {
   try {
     const fields = ['id', 'title', 'price', 'type', 'validationDays', 'validationTimeMin', 'description', 'gstSlab', 'createdAt'];
     const payload = cleanPayload(fields, req.body);
@@ -798,7 +829,7 @@ app.post('/api/plans', async (req, res) => {
   }
 });
 
-app.put('/api/plans/:id', async (req, res) => {
+app.put(['/api/plans/:id', '/api/plan/:id'], async (req, res) => {
   try {
     const fields = ['title', 'price', 'type', 'validationDays', 'validationTimeMin', 'description', 'gstSlab', 'createdAt'];
     const payload = cleanPayload(fields, req.body);
@@ -834,7 +865,7 @@ app.put('/api/plans/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/plans/:id', async (req, res) => {
+app.delete(['/api/plans/:id', '/api/plan/:id'], async (req, res) => {
   try {
     const fallbackList = readFallback('plans').filter(item => String(item.id) !== String(req.params.id));
     writeFallback('plans', fallbackList);
@@ -855,7 +886,7 @@ app.delete('/api/plans/:id', async (req, res) => {
 });
 
 // 5. Members
-app.get('/api/members', async (req, res) => {
+app.get(['/api/members', '/api/member'], async (req, res) => {
   try {
     let allMembers = [];
     if (!useFallbackMode) {
@@ -876,7 +907,7 @@ app.get('/api/members', async (req, res) => {
   }
 });
 
-app.post('/api/members', async (req, res) => {
+app.post(['/api/members', '/api/member'], async (req, res) => {
   try {
     const fields = ['id', 'parentName', 'mobileNumber', 'childName', 'childAge', 'planId', 'medicalNotes', 'createdAt'];
     const payload = cleanPayload(fields, req.body);
@@ -903,7 +934,7 @@ app.post('/api/members', async (req, res) => {
   }
 });
 
-app.put('/api/members/:id', async (req, res) => {
+app.put(['/api/members/:id', '/api/member/:id'], async (req, res) => {
   try {
     const fields = ['parentName', 'mobileNumber', 'childName', 'childAge', 'planId', 'medicalNotes', 'createdAt'];
     const payload = cleanPayload(fields, req.body);
@@ -939,7 +970,7 @@ app.put('/api/members/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/members/:id', async (req, res) => {
+app.delete(['/api/members/:id', '/api/member/:id'], async (req, res) => {
   try {
     const fallbackList = readFallback('members').filter(item => String(item.id) !== String(req.params.id));
     writeFallback('members', fallbackList);
@@ -960,7 +991,7 @@ app.delete('/api/members/:id', async (req, res) => {
 });
 
 // 6. Services
-app.get('/api/services', async (req, res) => {
+app.get(['/api/services', '/api/service'], async (req, res) => {
   try {
     let allServices = [];
     if (!useFallbackMode) {
@@ -989,7 +1020,7 @@ app.get('/api/services', async (req, res) => {
   }
 });
 
-app.post('/api/services', async (req, res) => {
+app.post(['/api/services', '/api/service'], async (req, res) => {
   try {
     const fields = ['categoryId', 'name', 'price', 'gstSlab'];
     const payload = cleanPayload(fields, req.body);
@@ -1016,7 +1047,7 @@ app.post('/api/services', async (req, res) => {
   }
 });
 
-app.put('/api/services/:id', async (req, res) => {
+app.put(['/api/services/:id', '/api/service/:id'], async (req, res) => {
   try {
     const fields = ['categoryId', 'name', 'price', 'gstSlab'];
     const payload = cleanPayload(fields, req.body);
@@ -1051,7 +1082,7 @@ app.put('/api/services/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/services/:id', async (req, res) => {
+app.delete(['/api/services/:id', '/api/service/:id'], async (req, res) => {
   try {
     const fallbackList = readFallback('services').filter(item => String(item.id) !== String(req.params.id));
     writeFallback('services', fallbackList);
@@ -1072,7 +1103,7 @@ app.delete('/api/services/:id', async (req, res) => {
 });
 
 // 7. Catalogue
-app.get('/api/catalogue', async (req, res) => {
+app.get(['/api/catalogue', '/api/catalogues'], async (req, res) => {
   try {
     let allCatalogue = [];
     if (!useFallbackMode) {
@@ -1100,7 +1131,7 @@ app.get('/api/catalogue', async (req, res) => {
   }
 });
 
-app.post('/api/catalogue', async (req, res) => {
+app.post(['/api/catalogue', '/api/catalogues'], async (req, res) => {
   try {
     const fields = ['designName', 'categoryId', 'imageUrl', 'estimatePrice', 'description'];
     const body = {
@@ -1131,7 +1162,7 @@ app.post('/api/catalogue', async (req, res) => {
   }
 });
 
-app.put('/api/catalogue/:id', async (req, res) => {
+app.put(['/api/catalogue/:id', '/api/catalogues/:id'], async (req, res) => {
   try {
     const fields = ['designName', 'categoryId', 'imageUrl', 'estimatePrice', 'description'];
     const body = {
@@ -1170,7 +1201,7 @@ app.put('/api/catalogue/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/catalogue/:id', async (req, res) => {
+app.delete(['/api/catalogue/:id', '/api/catalogues/:id'], async (req, res) => {
   try {
     const fallbackList = readFallback('catalogue').filter(item => String(item.id) !== String(req.params.id));
     writeFallback('catalogue', fallbackList);
@@ -1191,7 +1222,7 @@ app.delete('/api/catalogue/:id', async (req, res) => {
 });
 
 // 8. Play Entries
-app.get('/api/entries', async (req, res) => {
+app.get(['/api/entries', '/api/entry'], async (req, res) => {
   try {
     let allEntries = [];
     if (!useFallbackMode) {
@@ -1212,7 +1243,7 @@ app.get('/api/entries', async (req, res) => {
   }
 });
 
-app.post('/api/entries', async (req, res) => {
+app.post(['/api/entries', '/api/entry'], async (req, res) => {
   try {
     const fields = [
       'id', 'childName', 'parentName', 'mobileNumber', 'startTime', 'endTime',
@@ -1245,7 +1276,7 @@ app.post('/api/entries', async (req, res) => {
   }
 });
 
-app.put('/api/entries/:id', async (req, res) => {
+app.put(['/api/entries/:id', '/api/entry/:id'], async (req, res) => {
   try {
     const fields = [
       'childName', 'parentName', 'mobileNumber', 'startTime', 'endTime',
@@ -1287,7 +1318,7 @@ app.put('/api/entries/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/entries/:id', async (req, res) => {
+app.delete(['/api/entries/:id', '/api/entry/:id'], async (req, res) => {
   try {
     const fallbackList = readFallback('play_entries').filter(item => String(item.id) !== String(req.params.id));
     writeFallback('play_entries', fallbackList);
@@ -1308,7 +1339,7 @@ app.delete('/api/entries/:id', async (req, res) => {
 });
 
 // 9. Billings
-app.get('/api/billings', async (req, res) => {
+app.get(['/api/billings', '/api/billing', '/api/invoice', '/api/invoices'], async (req, res) => {
   try {
     let allBillings = [];
     if (!useFallbackMode) {
@@ -1329,7 +1360,7 @@ app.get('/api/billings', async (req, res) => {
   }
 });
 
-app.post('/api/billings', async (req, res) => {
+app.post(['/api/billings', '/api/billing', '/api/invoice', '/api/invoices'], async (req, res) => {
   try {
     const fields = [
       'customerId', 'customerName', 'handledBy', 'mobileNo', 'planId', 'durationMin',
@@ -1361,7 +1392,7 @@ app.post('/api/billings', async (req, res) => {
   }
 });
 
-app.put('/api/billings/:id', async (req, res) => {
+app.put(['/api/billings/:id', '/api/billing/:id', '/api/invoice/:id', '/api/invoices/:id'], async (req, res) => {
   try {
     const fields = [
       'customerId', 'customerName', 'handledBy', 'mobileNo', 'planId', 'durationMin',
@@ -1400,7 +1431,7 @@ app.put('/api/billings/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/billings/:id', async (req, res) => {
+app.delete(['/api/billings/:id', '/api/billing/:id', '/api/invoice/:id', '/api/invoices/:id'], async (req, res) => {
   try {
     const fallbackList = readFallback('billings').filter(item => String(item.id) !== String(req.params.id));
     writeFallback('billings', fallbackList);
@@ -1421,7 +1452,7 @@ app.delete('/api/billings/:id', async (req, res) => {
 });
 
 // 10. Events
-app.get('/api/events', async (req, res) => {
+app.get(['/api/events', '/api/event'], async (req, res) => {
   try {
     let allEvents = [];
     if (!useFallbackMode) {
@@ -1442,7 +1473,7 @@ app.get('/api/events', async (req, res) => {
   }
 });
 
-app.post('/api/events', async (req, res) => {
+app.post(['/api/events', '/api/event'], async (req, res) => {
   try {
     const fields = [
       'id', 'categoryId', 'customerId', 'customerName', 'mobileNumber',
@@ -1473,7 +1504,7 @@ app.post('/api/events', async (req, res) => {
   }
 });
 
-app.put('/api/events/:id', async (req, res) => {
+app.put(['/api/events/:id', '/api/event/:id'], async (req, res) => {
   try {
     const fields = [
       'categoryId', 'customerId', 'customerName', 'mobileNumber',
@@ -1513,7 +1544,7 @@ app.put('/api/events/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/events/:id', async (req, res) => {
+app.delete(['/api/events/:id', '/api/event/:id'], async (req, res) => {
   try {
     const fallbackList = readFallback('events').filter(item => String(item.id) !== String(req.params.id));
     writeFallback('events', fallbackList);
@@ -1534,7 +1565,7 @@ app.delete('/api/events/:id', async (req, res) => {
 });
 
 // 11. Expenses
-app.get('/api/expenses', async (req, res) => {
+app.get(['/api/expenses', '/api/expense'], async (req, res) => {
   try {
     let allExpenses = [];
     if (!useFallbackMode) {
@@ -1555,7 +1586,7 @@ app.get('/api/expenses', async (req, res) => {
   }
 });
 
-app.post('/api/expenses', async (req, res) => {
+app.post(['/api/expenses', '/api/expense'], async (req, res) => {
   try {
     const fields = ['categoryId', 'amount', 'description', 'vendorName', 'date', 'createdAt'];
     const payload = cleanPayload(fields, req.body);
@@ -1584,7 +1615,7 @@ app.post('/api/expenses', async (req, res) => {
   }
 });
 
-app.put('/api/expenses/:id', async (req, res) => {
+app.put(['/api/expenses/:id', '/api/expense/:id'], async (req, res) => {
   try {
     const fields = ['categoryId', 'amount', 'description', 'vendorName', 'date', 'createdAt'];
     const payload = cleanPayload(fields, req.body);
@@ -1621,7 +1652,7 @@ app.put('/api/expenses/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/expenses/:id', async (req, res) => {
+app.delete(['/api/expenses/:id', '/api/expense/:id'], async (req, res) => {
   try {
     const fallbackList = readFallback('expenses').filter(item => String(item.id) !== String(req.params.id));
     writeFallback('expenses', fallbackList);
@@ -1642,7 +1673,7 @@ app.delete('/api/expenses/:id', async (req, res) => {
 });
 
 // 12. Walk-in legacy data V1 & V2
-app.get('/api/walk-in-v1', async (req, res) => {
+app.get(['/api/walk-in-v1', '/api/walk-ins-v1', '/api/walk-in-v1s', '/api/walk-ins-v1s'], async (req, res) => {
   try {
     let data = [];
     if (!useFallbackMode) {
@@ -1663,7 +1694,7 @@ app.get('/api/walk-in-v1', async (req, res) => {
   }
 });
 
-app.get('/api/walk-in-v2', async (req, res) => {
+app.get(['/api/walk-in-v2', '/api/walk-ins-v2', '/api/walk-in-v2s', '/api/walk-ins-v2s'], async (req, res) => {
   try {
     let data = [];
     if (!useFallbackMode) {
@@ -2041,6 +2072,18 @@ app.post('/api/import/:type', upload.single('file'), async (req, res) => {
   }
 });
 
+// --- Catch-all 404 Debug handler for any unregistered /api routes ---
+app.use('/api/*', (req, res) => {
+  console.warn(`\x1b[33m[API 404 Debug] Catch-all triggered for unregistered route: ${req.method} ${req.originalUrl}\x1b[0m`);
+  res.status(404).json({
+    error: 'API Route Not Found',
+    message: `The requested endpoint ${req.method} ${req.originalUrl} is not registered on this backend.`,
+    method: req.method,
+    path: req.originalUrl,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Configure Vite/Listen only in non-serverless environments
 (async () => {
   if (process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1') {
@@ -2063,9 +2106,9 @@ app.post('/api/import/:type', upload.single('file'), async (req, res) => {
   }
 
   if (process.env.VERCEL !== '1') {
-    const startPort = 3000;
+    const startPort = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
     app.listen(startPort, '0.0.0.0', () => {
-      console.log(`Server running on http://0.0.0.0:${startPort} (NODE_ENV: ${process.env.NODE_ENV || 'development'})`);
+      console.log(`Server running on http://0.0.0.0:${startPort} (NODE_ENV: ${process.env.NODE_ENV || 'production'})`);
     });
   }
 
