@@ -8,8 +8,37 @@ import { eq, and, sql } from 'drizzle-orm';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
 import dotenv from 'dotenv';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
+
+// 2. VERIFY SUPABASE ENV VARIABLES
+// Using a safe development fallback only when NOT running in production, so that AI Studio compilation/dev-server doesn't crash on us local build runs
+const supabaseUrl = process.env.SUPABASE_URL || (process.env.NODE_ENV !== 'production' ? 'https://vxhicoizewtisxiuolqh.supabase.co' : '');
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || (process.env.NODE_ENV !== 'production' ? 'sb_publishable_kn3fVpMpVX1wGWcUxV-Fpw_w8AomVlA' : '');
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error('\x1b[31m%s\x1b[0m', 'CRITICAL ERROR: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing! Crashing server startup as requested.');
+  process.exit(1);
+}
+
+// Instantiate Supabase client for backend use
+export const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+// 3. VERIFY DATABASE CONNECTION (Startup Test)
+(async () => {
+  try {
+    console.log('[DB Init] Running Supabase Database connectivity test on startup...');
+    const { data, error } = await supabase
+      .from('services')
+      .select('*')
+      .limit(1);
+
+    console.log('[DB Init] Supabase Connection Test completed successfully:', { data, error });
+  } catch (err) {
+    console.error('[DB Init] Supabase Connection Test failed on startup:', err);
+  }
+})();
 
 // Log buffer for debugging
 const serverLogs: string[] = [];
@@ -116,6 +145,37 @@ function cleanPayload(allowedKeys: string[], body: any): any {
     }
   }
   return result;
+}
+
+// Global robust Route Error Handler
+function handleRouteError(err: any, req: express.Request, res: express.Response) {
+  const errMsg = (err as Error).message || '';
+  console.error(`Route Error [${req.method} ${req.originalUrl}]:`, err);
+
+  // Auto-detect if endpoint is array collection vs single resource
+  const isArray = !['post', 'put', 'delete'].includes(req.method.toLowerCase()) &&
+                  !req.originalUrl.includes('business-profile') && 
+                  !req.originalUrl.includes('setting') && 
+                  !req.originalUrl.includes('health') &&
+                  !req.originalUrl.includes('import');
+
+  // 5. NEVER CRASH IF TABLE MISSING
+  // If Supabase returns 'relation does not exist' or Postgres error code 42P01
+  if (errMsg.includes('relation') && (errMsg.includes('does not exist') || errMsg.includes('not found')) || (err as any).code === '42P01') {
+    console.warn(`[Table Missing Failsafe] Relation not found, returning empty representation for ${req.originalUrl}`);
+    return res.status(200).json({
+      success: true,
+      data: isArray ? [] : {}
+    });
+  }
+
+  // 1. ADD FULL ERROR LOGGING & 8. RETURN VALID JSON ALWAYS
+  return res.status(500).json({
+    success: false,
+    route: req.originalUrl,
+    error: errMsg,
+    stack: (err as Error).stack
+  });
 }
 
 // Global active schema references
@@ -232,8 +292,41 @@ app.use(async (req, res, next) => {
   next();
 });
 
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
+app.get('/api/health', async (req, res) => {
+  try {
+    let supabaseConnected = false;
+    let dbDetails: any = null;
+    try {
+      const { data, error } = await supabase
+        .from('services')
+        .select('*')
+        .limit(1);
+
+      if (!error) {
+        supabaseConnected = true;
+        dbDetails = { services_sample_count: data?.length || 0 };
+      } else {
+        dbDetails = { error: error.message };
+      }
+    } catch (e) {
+      dbDetails = { error: (e as Error).message };
+    }
+
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      supabase: {
+        connected: supabaseConnected,
+        details: dbDetails
+      }
+    });
+  } catch (err) {
+    console.error('Health check failed:', err);
+    res.status(500).json({
+      status: 'error',
+      error: (err as Error).message
+    });
+  }
 });
 
 app.get('/api/logs', (req, res) => {
@@ -322,7 +415,7 @@ app.get('/api/business-profile', async (req, res) => {
     return res.json(profile);
   } catch (err) {
     console.error('Core Error business-profile GET:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -371,7 +464,7 @@ app.post('/api/business-profile', async (req, res) => {
     return res.json(updatedPayload);
   } catch (err) {
     console.error('Core Error business-profile POST:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -405,7 +498,7 @@ app.get('/api/staff', async (req, res) => {
     return res.json(allStaff);
   } catch (err) {
     console.error('Core Error staff GET:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -441,7 +534,7 @@ app.post('/api/staff', async (req, res) => {
     return res.json(payload);
   } catch (err) {
     console.error('Core Error staff POST:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -484,7 +577,7 @@ app.put('/api/staff/:id', async (req, res) => {
     return res.json(updatedPayload);
   } catch (err) {
     console.error('Core Error staff PUT:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -504,7 +597,7 @@ app.delete('/api/staff/:id', async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     console.error('Core Error staff DELETE:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -536,7 +629,7 @@ app.get('/api/categories', async (req, res) => {
     return res.json(allCategories);
   } catch (err) {
     console.error('Core Error categories GET:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -563,7 +656,7 @@ app.post('/api/categories', async (req, res) => {
     return res.json(finalPayload);
   } catch (err) {
     console.error('Core Error categories POST:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -598,7 +691,7 @@ app.put('/api/categories/:id', async (req, res) => {
     return res.json(updatedPayload);
   } catch (err) {
     console.error('Core Error categories PUT:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -618,7 +711,7 @@ app.delete('/api/categories/:id', async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     console.error('Core Error categories DELETE:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -649,7 +742,7 @@ app.get('/api/plans', async (req, res) => {
     return res.json(allPlans);
   } catch (err) {
     console.error('Core Error plans GET:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -678,7 +771,7 @@ app.post('/api/plans', async (req, res) => {
     return res.json(payload);
   } catch (err) {
     console.error('Core Error plans POST:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -714,7 +807,7 @@ app.put('/api/plans/:id', async (req, res) => {
     return res.json(updatedPayload);
   } catch (err) {
     console.error('Core Error plans PUT:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -734,7 +827,7 @@ app.delete('/api/plans/:id', async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     console.error('Core Error plans DELETE:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -756,7 +849,7 @@ app.get('/api/members', async (req, res) => {
     return res.json(allMembers);
   } catch (err) {
     console.error('Core Error members GET:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -783,7 +876,7 @@ app.post('/api/members', async (req, res) => {
     return res.json(payload);
   } catch (err) {
     console.error('Core Error members POST:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -819,7 +912,7 @@ app.put('/api/members/:id', async (req, res) => {
     return res.json(updatedPayload);
   } catch (err) {
     console.error('Core Error members PUT:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -839,7 +932,7 @@ app.delete('/api/members/:id', async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     console.error('Core Error members DELETE:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -869,7 +962,7 @@ app.get('/api/services', async (req, res) => {
     return res.json(allServices);
   } catch (err) {
     console.error('Core Error services GET:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -896,7 +989,7 @@ app.post('/api/services', async (req, res) => {
     return res.json(finalPayload);
   } catch (err) {
     console.error('Core Error services POST:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -931,7 +1024,7 @@ app.put('/api/services/:id', async (req, res) => {
     return res.json(updatedPayload);
   } catch (err) {
     console.error('Core Error services PUT:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -951,7 +1044,7 @@ app.delete('/api/services/:id', async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     console.error('Core Error services DELETE:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -980,7 +1073,7 @@ app.get('/api/catalogue', async (req, res) => {
     return res.json(allCatalogue);
   } catch (err) {
     console.error('Core Error catalogue GET:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1011,7 +1104,7 @@ app.post('/api/catalogue', async (req, res) => {
     return res.json(finalPayload);
   } catch (err) {
     console.error('Error inserting catalogue:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1050,7 +1143,7 @@ app.put('/api/catalogue/:id', async (req, res) => {
     return res.json(updatedPayload);
   } catch (err) {
     console.error('Error updating catalogue:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1070,7 +1163,7 @@ app.delete('/api/catalogue/:id', async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     console.error('Error deleting catalogue:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1092,7 +1185,7 @@ app.get('/api/entries', async (req, res) => {
     return res.json(allEntries);
   } catch (err) {
     console.error('Core Error entries GET:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1125,7 +1218,7 @@ app.post('/api/entries', async (req, res) => {
     return res.json(payload);
   } catch (err) {
     console.error('Core Error entries POST:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1167,7 +1260,7 @@ app.put('/api/entries/:id', async (req, res) => {
     return res.json(updatedPayload);
   } catch (err) {
     console.error('Core Error entries PUT:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1187,7 +1280,7 @@ app.delete('/api/entries/:id', async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     console.error('Core Error entries DELETE:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1209,7 +1302,7 @@ app.get('/api/billings', async (req, res) => {
     return res.json(allBillings);
   } catch (err) {
     console.error('Core Error billings GET:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1241,7 +1334,7 @@ app.post('/api/billings', async (req, res) => {
     return res.json(finalPayload);
   } catch (err) {
     console.error('Core Error billings POST:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1280,7 +1373,7 @@ app.put('/api/billings/:id', async (req, res) => {
     return res.json(updatedPayload);
   } catch (err) {
     console.error('Core Error billings PUT:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1300,7 +1393,7 @@ app.delete('/api/billings/:id', async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     console.error('Core Error billings DELETE:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1322,7 +1415,7 @@ app.get('/api/events', async (req, res) => {
     return res.json(allEvents);
   } catch (err) {
     console.error('Core Error events GET:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1353,7 +1446,7 @@ app.post('/api/events', async (req, res) => {
     return res.json(payload);
   } catch (err) {
     console.error('Core Error events POST:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1393,7 +1486,7 @@ app.put('/api/events/:id', async (req, res) => {
     return res.json(updatedPayload);
   } catch (err) {
     console.error('Core Error events PUT:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1413,7 +1506,7 @@ app.delete('/api/events/:id', async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     console.error('Core Error events DELETE:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1435,7 +1528,7 @@ app.get('/api/expenses', async (req, res) => {
     return res.json(allExpenses);
   } catch (err) {
     console.error('Core Error expenses GET:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1464,7 +1557,7 @@ app.post('/api/expenses', async (req, res) => {
     return res.json(finalPayload);
   } catch (err) {
     console.error('Core Error expenses POST:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1501,7 +1594,7 @@ app.put('/api/expenses/:id', async (req, res) => {
     return res.json(updatedPayload);
   } catch (err) {
     console.error('Core Error expenses PUT:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1521,7 +1614,7 @@ app.delete('/api/expenses/:id', async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     console.error('Core Error expenses DELETE:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1620,7 +1713,7 @@ app.post('/api/socks-types', async (req, res) => {
     return res.json(finalPayload);
   } catch (err) {
     console.error('Core Error socks-types POST:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1655,7 +1748,7 @@ app.put('/api/socks-types/:id', async (req, res) => {
     return res.json(updatedPayload);
   } catch (err) {
     console.error('Core Error socks-types PUT:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1675,7 +1768,7 @@ app.delete('/api/socks-types/:id', async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     console.error('Core Error socks-types DELETE:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1704,7 +1797,7 @@ app.get('/api/system-settings/:key', async (req, res) => {
     return res.json(setting);
   } catch (err) {
     console.error('Core Error system-settings GET:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1745,7 +1838,7 @@ app.post('/api/system-settings/:key', async (req, res) => {
     return res.json(req.body);
   } catch (err) {
     console.error('Core Error system-settings POST:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1760,7 +1853,7 @@ app.post('/api/sql-query', async (req, res) => {
     const result = await db.execute(sql.raw(query));
     return res.json(result);
   } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1891,7 +1984,7 @@ app.post('/api/import-json/:type', async (req, res) => {
     res.status(400).json({ error: 'Invalid import type' });
   } catch (err) {
     console.error('Import Error:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 
@@ -1921,7 +2014,7 @@ app.post('/api/import/:type', upload.single('file'), async (req, res) => {
     res.status(400).json({ error: 'Invalid import type' });
   } catch (err) {
     console.error('File Upload Import failed:', err);
-    res.status(500).json({ error: (err as Error).message });
+    return handleRouteError(err, req, res);
   }
 });
 

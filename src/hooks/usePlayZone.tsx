@@ -294,7 +294,11 @@ export function PlayZoneProvider({ children }: { children: React.ReactNode }) {
         }
         const text = await res.text();
         if (!text) return undefined;
-        return JSON.parse(text);
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object' && 'success' in parsed && 'data' in parsed) {
+          return parsed.data;
+        }
+        return parsed;
       } catch (e) {
         console.error(`[Sync] API Error: Fetch failed or cannot parse JSON for ${url}`, e);
         return undefined;
