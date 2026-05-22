@@ -35,7 +35,9 @@ if (typeof dns.setDefaultResultOrder === 'function') {
 }
 
 const upload = multer({ storage: multer.memoryStorage() });
-const PORT = 3000;
+const PORT = process.env.NODE_ENV === 'production' && process.env.PORT 
+  ? parseInt(process.env.PORT) 
+  : 3000;
 const app = express();
 export { app };
 
@@ -228,6 +230,10 @@ checkDbConnection();
 app.use(async (req, res, next) => {
   await shouldAttemptDbConnection();
   next();
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok' });
 });
 
 app.get('/api/logs', (req, res) => {
@@ -1941,8 +1947,9 @@ app.post('/api/import/:type', upload.single('file'), async (req, res) => {
   }
 
   if (process.env.VERCEL !== '1') {
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server running on http://0.0.0.0:${PORT}`);
+    const startPort = process.env.NODE_ENV === 'production' && process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+    app.listen(startPort, '0.0.0.0', () => {
+      console.log(`Server running on http://0.0.0.0:${startPort} (NODE_ENV: ${process.env.NODE_ENV || 'development'})`);
     });
   }
 

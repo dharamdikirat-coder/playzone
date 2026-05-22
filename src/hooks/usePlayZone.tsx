@@ -289,15 +289,15 @@ export function PlayZoneProvider({ children }: { children: React.ReactNode }) {
       try {
         const res = await fetch(url);
         if (!res.ok) {
-          console.warn(`[Sync] API Info: ${url} returned response status ${res.status}. Falling back to default.`);
-          return fallback;
+          console.warn(`[Sync] API Info: ${url} returned response status ${res.status}. Active state protected.`);
+          return undefined;
         }
         const text = await res.text();
-        if (!text) return fallback;
+        if (!text) return undefined;
         return JSON.parse(text);
       } catch (e) {
         console.error(`[Sync] API Error: Fetch failed or cannot parse JSON for ${url}`, e);
-        return fallback;
+        return undefined;
       }
     };
 
