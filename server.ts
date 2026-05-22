@@ -39,13 +39,46 @@ const PORT = 3000;
 const app = express();
 export { app };
 
-// Enable CORS for all incoming requests (crucial when hosting UI on different platforms/subdomains)
-app.use(cors({
-  origin: '*',
+// Define explicitly approved origins for production, preview, and local development
+const ALLOWED_ORIGINS = [
+  'https://playzonefunkyland.netlify.app',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:5173',
+  'http://localhost:5174'
+];
+
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    // Treat server-to-server or non-browser/curl requests without Origin header as allowed
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    // Direct check of static domains, local hosts, and Google AI Studio Preview domains
+    const isAllowed = ALLOWED_ORIGINS.includes(origin) ||
+                      origin.startsWith('https://ais-dev-') ||
+                      origin.startsWith('https://ais-pre-') ||
+                      origin.endsWith('.googleusercontent.com') ||
+                      /^http:\/\/localhost:\d+$/.test(origin);
+
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      console.warn(`[CORS Log] Traffic from unauthorized origin blocked: ${origin}`);
+      callback(null, false);
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-}));
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Cache-Control', 'Pragma'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+};
+
+// Immediately handle global OPTIONS (Preflight) requests before any downstream route parses
+app.options('*', cors(corsOptions));
+app.use(cors(corsOptions));
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
