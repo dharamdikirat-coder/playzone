@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Remix: Remix: Remix: Funky Land: Kids Zone Manager",
+  "description": "Premium Kids Play Zone Management Software with Live Entry Tracking, Multi-GST Billing, Membership CRM, and Event Scheduling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
