@@ -304,10 +304,32 @@ export function isOnline(): boolean {
 
 export function getApiBase(): string {
   if (typeof window === 'undefined') return '';
+
+  // 1. Prefer explicit VITE_API_URL environment variable if set by user in Vercel/Netlify dashboard
+  const envApiUrl = import.meta.env.VITE_API_URL;
+  if (envApiUrl && envApiUrl.trim() !== '') {
+    return envApiUrl.replace(/\/$/, ''); // strip trailing slash
+  }
+
   const hostname = window.location.hostname;
-  if (hostname && (hostname.includes('netlify.app') || hostname.includes('vercel.app') || hostname.includes('github.io'))) {
+
+  // 2. If running on local dev machine, connect to localhost API
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return '';
+  }
+
+  // 3. If deployed on Vercel, Vercel hosts both the frontend and backend.
+  // We want to fetch from the local serverless functions relatively!
+  if (hostname.includes('vercel.app')) {
+    return '';
+  }
+
+  // 4. If on Netlify or Github Pages, they only host static files. 
+  // By default, connect to the shared Google Cloud Run backend for this app.
+  if (hostname.includes('netlify.app') || hostname.includes('github.io')) {
     return 'https://ais-pre-d2mo7afrislianphxjhbyl-608713944205.asia-southeast1.run.app';
   }
+
   return '';
 }
 
