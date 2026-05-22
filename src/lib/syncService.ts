@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
 import { enqueueOperation, getOfflineQueue, dequeueOperation } from './offlineQueue';
 
+let hasWarnedAboutSupabase = false;
+
 // --- BI-DIRECTIONAL SCHEMAS MAPPING ---
 
 // General helper to map keys
@@ -312,12 +314,15 @@ export function getApiBase(): string {
     // If the developer set VITE_API_URL to the Supabase URL, catch it!
     // Supabase has no /api/ endpoints (they have /rest/v1), so this would result in failed fetches.
     if (envApiUrl.includes('supabase.co')) {
-      console.warn(
-        `%c[Sync Config] WARNING: VITE_API_URL is misconfigured to your Supabase project URL ("${envApiUrl}").\n` +
-        `App API endpoints are served by your Express backend (or Vercel serverless functions), NOT directly by Supabase REST.\n` +
-        `Ignoring this misconfigured/stale VITE_API_URL and falling back to proper relative routes.`,
-        'color: #ff9800; font-weight: bold; font-size: 11px;'
-      );
+      if (!hasWarnedAboutSupabase) {
+        console.warn(
+          `%c[Sync Config] WARNING: VITE_API_URL is misconfigured to your Supabase project URL ("${envApiUrl}").\n` +
+          `App API endpoints are served by your Express backend (or Vercel serverless functions), NOT directly by Supabase REST.\n` +
+          `Ignoring this misconfigured/stale VITE_API_URL and falling back to proper relative routes.`,
+          'color: #ff9800; font-weight: bold; font-size: 11px;'
+        );
+        hasWarnedAboutSupabase = true;
+      }
     } else {
       return envApiUrl.replace(/\/$/, ''); // strip trailing slash
     }

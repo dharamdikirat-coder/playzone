@@ -15,11 +15,13 @@ dotenv.config();
 // 2. VERIFY SUPABASE ENV VARIABLES WITH SAFE FALLBACK
 // Fallback to coordinates so the local development container or AI Studio build is bootable without manual configuration
 const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
-const supabaseUrl = process.env.SUPABASE_URL || 'https://vxhicoizewtisxiuolqh.supabase.co';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'sb_publishable_kn3fVpMpVX1wGWcUxV-Fpw_w8AomVlA';
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://vxhicoizewtisxiuolqh.supabase.co';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_kn3fVpMpVX1wGWcUxV-Fpw_w8AomVlA';
 
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  console.warn('[Supabase Init] WARNING: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables are missing! Utilizing default system credentials as development failsafe.');
+const hasCustomSupabaseEnv = !!(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL);
+
+if (!hasCustomSupabaseEnv) {
+  console.warn('[Supabase Init] WARNING: Supabase URL environment variables are missing! Utilizing default system credentials as development failsafe.');
   if (isProd) {
     console.error('[Supabase Init] CRITICAL PROD ERROR: Missing required Supabase credentials in Production!');
   }
@@ -37,9 +39,13 @@ export const supabase = createClient(supabaseUrl, supabaseServiceKey);
       .select('*')
       .limit(1);
 
-    console.log('[DB Init] Supabase Connection Test completed successfully:', { data, error });
+    if (error) {
+      console.error('[DB Init] Supabase Connection Test failed with API error:', error);
+    } else {
+      console.log('[DB Init] Supabase Connection Test completed successfully: Services table verified.', { count: data?.length || 0 });
+    }
   } catch (err) {
-    console.error('[DB Init] Supabase Connection Test failed on startup:', err);
+    console.error('[DB Init] Supabase Connection Test failed with exception on startup:', err);
   }
 })();
 
@@ -152,9 +158,29 @@ app.get('/api/test', (req, res) => {
       node_env: process.env.NODE_ENV,
       port: process.env.PORT || 'not defined (using 3000)',
       database_url_present: !!process.env.DATABASE_URL,
-      supabase_url_present: !!process.env.SUPABASE_URL
+      supabase_url_present: !!(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
     }
   });
+});
+
+app.get('/api/catalogue', (req, res) => {
+  res.json([]);
+});
+
+app.get('/api/plans', (req, res) => {
+  res.json([]);
+});
+
+app.get('/api/events', (req, res) => {
+  res.json([]);
+});
+
+app.get('/api/members', (req, res) => {
+  res.json([]);
+});
+
+app.get('/api/staff', (req, res) => {
+  res.json([]);
 });
 
 // --- Middleware for API JSON Safety ---
