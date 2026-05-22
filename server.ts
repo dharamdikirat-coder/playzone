@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import dns from 'dns';
+import cors from 'cors';
 import { db, pool } from './src/db/index';
 import * as schema from './src/db/schema';
 import { eq, and, sql } from 'drizzle-orm';
@@ -37,6 +38,14 @@ const upload = multer({ storage: multer.memoryStorage() });
 const PORT = 3000;
 const app = express();
 export { app };
+
+// Enable CORS for all incoming requests (crucial when hosting UI on different platforms/subdomains)
+app.use(cors({
+  origin: '*',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -77,14 +86,23 @@ function cleanPayload(allowedKeys: string[], body: any): any {
 // Global active schema references
 console.log('[Server] Database connections initialized. Failsafe setup loading...');
 
-// --- Robust Local JSON Filesystem Fallback Store ---
+// --- Robust Local JSON Filesystem & In-Memory Fallback Store ---
 import fs from 'fs';
 
-const DATA_DIR = path.join(process.cwd(), '.data');
+const isVercel = process.env.VERCEL === '1';
+// In serverless environments, write to /tmp which is writable, otherwise fall back to local .data folder
+const DATA_DIR = isVercel ? '/tmp/.data' : path.join(process.cwd(), '.data');
 
-// Ensure data folder exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+// Global in-memory backup dictionary to guarantee zero filesystem EROFS exceptions
+const inMemoryFallback: Record<string, any[]> = {};
+
+// Ensure fallback folder exists containing writable directory
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.warn('[DB Fallback] Failed to create DATA_DIR. Defaulting gracefully to temporary memory cache:', (e as Error).message);
 }
 
 function getFallbackFile(table: string): string {
@@ -92,24 +110,34 @@ function getFallbackFile(table: string): string {
 }
 
 function readFallback(table: string): any[] {
+  // If in-memory copy exists, prefer it or use as live fallback
+  if (inMemoryFallback[table]) {
+    return inMemoryFallback[table];
+  }
+
   const filePath = getFallbackFile(table);
   try {
     if (fs.existsSync(filePath)) {
       const content = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(content) || [];
+      const parsed = JSON.parse(content) || [];
+      inMemoryFallback[table] = parsed; // Sync to memory
+      return parsed;
     }
   } catch (e) {
-    console.error(`Error reading fallback file for ${table}:`, e);
+    console.warn(`[DB Fallback] Error reading fallback file for ${table}:`, (e as Error).message);
   }
   return [];
 }
 
 function writeFallback(table: string, data: any[]) {
+  // Always update in-memory fallback first (guaranteed to succeed)
+  inMemoryFallback[table] = data;
+
   const filePath = getFallbackFile(table);
   try {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
   } catch (e) {
-    console.error(`Error writing fallback file for ${table}:`, e);
+    console.warn(`[DB Fallback] Read-only or locked filesystems warning on writing fallback for ${table}:`, (e as Error).message);
   }
 }
 
@@ -119,8 +147,9 @@ const hasDatabaseUrl = !!(process.env.DATABASE_URL &&
                          process.env.DATABASE_URL.trim() !== '');
 
 let useFallbackMode = !hasDatabaseUrl;
+let lastDbCheckTime = 0;
 
-// Initialize isDbConnected or check on startup
+// Reconnect/Connection check scheduler
 async function checkDbConnection() {
   if (!hasDatabaseUrl) {
     console.warn('[DB Init] DATABASE_URL env is empty or localhost. Activating dynamic local JSON filesystem fallback mode.');
@@ -137,8 +166,36 @@ async function checkDbConnection() {
   }
 }
 
+// Active self-healing PostgreSQL connection check
+async function shouldAttemptDbConnection() {
+  if (!useFallbackMode) return true;
+  if (!hasDatabaseUrl) return false;
+
+  const now = Date.now();
+  // Attempt db reconnect at most once per 30 seconds
+  if (now - lastDbCheckTime > 30000) {
+    lastDbCheckTime = now;
+    console.log('[DB Auto-Heal] Scheduled verification: Attempting DB re-connect...');
+    try {
+      await pool.query('SELECT 1');
+      console.log('[DB Auto-Heal] PostgreSQL connection recovered successfully! Resuming Standard Mode.');
+      useFallbackMode = false;
+      return true;
+    } catch (e) {
+      console.warn('[DB Auto-Heal] Scheduled verification failed:', (e as Error).message);
+    }
+  }
+  return false;
+}
+
 // Perform connection check immediately
 checkDbConnection();
+
+// Auto-heal middleware triggered on incoming requests
+app.use(async (req, res, next) => {
+  await shouldAttemptDbConnection();
+  next();
+});
 
 app.get('/api/logs', (req, res) => {
   res.json(serverLogs);

@@ -418,25 +418,14 @@ export function PlayZoneProvider({ children }: { children: React.ReactNode }) {
 
   // --- AUTOMATIC RECONNECT & OFFLINE-QUEUES FLUSHING SETUP ---
   useEffect(() => {
-    // 1. Initialize anonymous Supabase Auth so that RLS auth.role() check of "authenticated" passes successfully!
+    // 1. Initialize Supabase Auth Session gracefully
     const initAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          console.log('[Auth] Checking authentication session...');
-          // Check if anonymous sign-in is possible without failing loudly
-          const authRes = await supabase.auth.signInAnonymously();
-          if (authRes.error) {
-            console.warn(
-              '[Auth] Anonymous sign-ins are disabled in your Supabase Auth dashboard Providers section. ' +
-              'Continuing safely in public client mode using your publishable/anon key. Code works perfectly. Response:',
-              authRes.error.message
-            );
-          } else {
-            console.log('[Auth] Client anonymous user authenticated:', authRes.data.session?.user?.id);
-          }
+        if (session) {
+          console.log('[Auth] Restored active authenticated session:', session.user?.id);
         } else {
-          console.log('[Auth] Restored authenticated session:', session.user?.id);
+          console.log('[Auth] Operating in public client mode using publishable/anon key.');
         }
       } catch (e) {
         console.warn('[Auth] Supabase auth session initialization bypassed:', e);
