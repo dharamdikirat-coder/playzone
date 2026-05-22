@@ -80,8 +80,8 @@ const ALLOWED_ORIGINS = [
 ];
 
 const corsOptions: cors.CorsOptions = {
-  origin: (origin, callback) => {
-    // Treat server-to-server or non-browser/curl requests without Origin header as allowed
+  origin: function(origin, callback) {
+    // Treat server-to-server or non-browser/curl/service-to-service requests without Origin header as allowed
     if (!origin) {
       return callback(null, true);
     }
@@ -97,12 +97,21 @@ const corsOptions: cors.CorsOptions = {
       callback(null, true);
     } else {
       console.warn(`[CORS Log] Traffic from unauthorized origin blocked: ${origin}`);
-      callback(null, false);
+      callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Cache-Control', 'Pragma'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'apikey',
+    'x-client-info',
+    'X-Requested-With',
+    'Accept',
+    'Cache-Control',
+    'Pragma'
+  ],
   preflightContinue: false,
   optionsSuccessStatus: 204
 };
